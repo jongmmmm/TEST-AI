@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}설정 — KIS 자동매매{% endblock %}
+{% block content %}
+<h4 class="fw-bold mb-4">설정</h4>
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-bold">투자 모드 전환</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">현재 모드: <strong id="current-mode-label">-</strong></p>
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-secondary" onclick="setMode('paper')">모의투자로 전환</button>
+      <button class="btn btn-outline-danger" onclick="confirmRealMode()">실전투자로 전환</button>
+    </div>
+  </div>
+</div>
+<div class="card shadow-sm">
+  <div class="card-header fw-bold">KIS API 토큰</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">토큰은 24시간마다 자동 갱신됩니다. 오류 발생 시 수동 갱신하세요.</p>
+    <button class="btn btn-outline-primary" onclick="refreshToken()">토큰 수동 갱신</button>
+    <div id="token-msg" class="mt-2 text-success small"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+fetch("/api/settings/mode").then(r => r.json()).then(d => {
+  document.getElementById("current-mode-label").textContent = d.mode === "real" ? "실전투자" : "모의투자";
+});
+
+function setMode(mode) {
+  fetch("/api/settings/mode", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({mode}),
+  }).then(r => r.json()).then(d => {
+    document.getElementById("current-mode-label").textContent = mode === "real" ? "실전투자" : "모의투자";
+    alert(d.message);
+    location.reload();
+  });
+}
+
+function confirmRealMode() {
+  if (confirm("실전투자로 전환하면 실제 자금으로 거래됩니다.\n반드시 소액 테스트 후 사용하세요. 계속하시겠습니까?")) {
+    setMode("real");
+  }
+}
+
+function refreshToken() {
+  fetch("/api/settings/token-refresh", {method:"POST"})
+    .then(r => r.json())
+    .then(d => { document.getElementById("token-msg").textContent = d.message; });
+}
+</script>
+{% endblock %}

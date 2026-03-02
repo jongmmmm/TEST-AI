@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}대시보드 — KIS 자동매매{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0">대시보드</h4>
+  <button class="btn btn-sm btn-outline-secondary" onclick="loadBalance()">
+    <i class="fa-solid fa-rotate-right"></i> 새로고침
+  </button>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">보유 종목 수</div>
+        <div id="stat-count" class="fs-3 fw-bold">-</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">총 평가손익</div>
+        <div id="stat-pnl" class="fs-3 fw-bold">-</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">투자 모드</div>
+        <div id="stat-mode" class="fs-3 fw-bold">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="card shadow-sm">
+  <div class="card-header fw-bold">보유 종목</div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>종목코드</th><th>종목명</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가손익</th><th>수익률</th></tr>
+      </thead>
+      <tbody id="balance-body">
+        <tr><td colspan="7" class="text-center text-muted py-4">로딩 중...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function loadBalance() {
+  fetch("/api/balance").then(r => r.json()).then(d => {
+    document.getElementById("stat-mode").textContent = d.mode === "real" ? "실전" : "모의";
+    const tbody = document.getElementById("balance-body");
+    tbody.textContent = "";
+    if (!d.balance || !d.balance.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 7; td.className = "text-center text-muted py-4";
+      td.textContent = "보유 종목 없음";
+      tr.appendChild(td); tbody.appendChild(tr);
+      document.getElementById("stat-count").textContent = "0종목";
+      document.getElementById("stat-pnl").textContent = "0원";
+      return;
+    }
+    let totalPnl = 0;
+    d.balance.forEach(row => {
+      const pnl = row.eval_profit_loss || 0;
+      totalPnl += pnl;
+      const pnlClass = pnl >= 0 ? "text-danger" : "text-primary";
+      const tr = document.createElement("tr");
+      [
+        [row.stock_code, ""],
+        [row.stock_name, ""],
+        [row.quantity + "주", ""],
+        [row.avg_price.toLocaleString() + "원", ""],
+        [row.current_price.toLocaleString() + "원", ""],
+        [pnl.toLocaleString() + "원", pnlClass],
+        [(row.profit_loss_rate || 0).toFixed(2) + "%", pnlClass],
+      ].forEach(([text, cls]) => {
+        const td = document.createElement("td");
+        td.textContent = text;
+        if (cls) td.className = cls;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    document.getElementById("stat-count").textContent = d.balance.length + "종목";
+    const pnlEl = document.getElementById("stat-pnl");
+    pnlEl.textContent = totalPnl.toLocaleString() + "원";
+    pnlEl.className = "fs-3 fw-bold " + (totalPnl >= 0 ? "text-danger" : "text-primary");
+  });
+}
+loadBalance();
+setInterval(loadBalance, 30000);
+</script>
+{% endblock %}

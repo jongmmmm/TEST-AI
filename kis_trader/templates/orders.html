@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}주문 내역 — KIS 자동매매{% endblock %}
+{% block content %}
+<h4 class="fw-bold mb-4">주문 내역</h4>
+<div class="d-flex gap-2 mb-3">
+  <select class="form-select w-auto" id="filter-mode" onchange="loadOrders()">
+    <option value="">전체 모드</option>
+    <option value="paper">모의</option>
+    <option value="real">실전</option>
+  </select>
+  <select class="form-select w-auto" id="filter-trigger" onchange="loadOrders()">
+    <option value="">전체 유형</option>
+    <option value="auto">자동</option>
+    <option value="auction_manual">동시호가 수동</option>
+  </select>
+</div>
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>시간</th><th>종목</th><th>구분</th><th>가격</th><th>수량</th><th>상태</th><th>유형</th><th>모드</th></tr>
+      </thead>
+      <tbody id="order-body">
+        <tr><td colspan="8" class="text-center text-muted py-4">로딩 중...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function loadOrders() {
+  let url = "/orders/api/orders?";
+  const mode = document.getElementById("filter-mode").value;
+  const trigger = document.getElementById("filter-trigger").value;
+  if (mode) url += "mode=" + mode + "&";
+  if (trigger) url += "trigger=" + trigger;
+  fetch(url).then(r => r.json()).then(list => {
+    const tbody = document.getElementById("order-body");
+    tbody.textContent = "";
+    if (!list.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 8; td.className = "text-center text-muted py-4";
+      td.textContent = "주문 내역 없음";
+      tr.appendChild(td); tbody.appendChild(tr); return;
+    }
+    list.forEach(o => {
+      const tr = document.createElement("tr");
+      const isBuy = o.order_type === "buy";
+      [
+        [o.created_at.replace("T"," ").slice(0,16), ""],
+        [o.stock_code, ""],
+        [isBuy ? "매수" : "매도", isBuy ? "text-danger" : "text-primary"],
+        [Number(o.price).toLocaleString() + "원", ""],
+        [o.quantity + "주", ""],
+        [o.status, ""],
+        [o.trigger === "auto" ? "자동" : "동시호가", ""],
+        [o.mode === "real" ? "실전" : "모의", ""],
+      ].forEach(([text, cls]) => {
+        const td = document.createElement("td");
+        td.textContent = text;
+        if (cls) td.className = cls;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  });
+}
+loadOrders();
+</script>
+{% endblock %}

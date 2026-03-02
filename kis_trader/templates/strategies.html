@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}전략 관리 — KIS 자동매매{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0">전략 관리</h4>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+    <i class="fa-solid fa-plus me-1"></i>전략 추가
+  </button>
+</div>
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>이름</th><th>종목</th><th>전략유형</th><th>모드</th><th>상태</th><th>관리</th></tr>
+      </thead>
+      <tbody id="strategy-body">
+        <tr><td colspan="6" class="text-center text-muted py-4">로딩 중...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">전략 추가</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">전략명</label>
+          <input type="text" class="form-control" id="s-name" placeholder="삼성전자 MA전략">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">종목코드</label>
+          <input type="text" class="form-control" id="s-code" placeholder="005930">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">종목명</label>
+          <input type="text" class="form-control" id="s-sname" placeholder="삼성전자">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">전략 유형</label>
+          <select class="form-select" id="s-type" onchange="updateParamHint()">
+            <option value="ma">이동평균선 (MA/EMA)</option>
+            <option value="rsi_macd">RSI / MACD</option>
+            <option value="condition">조건식 직접 설정</option>
+            <option value="ml">AI/ML 예측 (RandomForest)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">파라미터 (JSON)</label>
+          <textarea class="form-control font-monospace" id="s-params" rows="5"></textarea>
+          <div class="text-muted small mt-1" id="param-hint"></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">모드</label>
+          <select class="form-select" id="s-mode">
+            <option value="paper">모의투자</option>
+            <option value="real">실전투자</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="addStrategy()">추가</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PARAM_DEFAULTS = {
+  ma: '{"short_period":5,"long_period":20,"buy_qty":10,"stop_loss_pct":-3,"take_profit_pct":5}',
+  rsi_macd: '{"rsi_period":14,"rsi_oversold":30,"rsi_overbought":70,"macd_fast":12,"macd_slow":26,"macd_signal":9,"buy_qty":10}',
+  condition: '{"conditions":[{"indicator":"change_rate","operator":">","value":3}],"action":"buy","buy_qty":5}',
+  ml: '{"buy_threshold":0.65,"sell_threshold":0.35,"buy_qty":10}',
+};
+function updateParamHint() {
+  const t = document.getElementById("s-type").value;
+  document.getElementById("s-params").value = PARAM_DEFAULTS[t] || "{}";
+  document.getElementById("param-hint").textContent = "기본 파라미터 예시가 자동 입력됐습니다.";
+}
+updateParamHint();
+
+function loadStrategies() {
+  fetch("/strategies/api/strategies").then(r => r.json()).then(list => {
+    const tbody = document.getElementById("strategy-body");
+    tbody.textContent = "";
+    if (!list.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6; td.className = "text-center text-muted py-4";
+      td.textContent = "등록된 전략이 없습니다";
+      tr.appendChild(td); tbody.appendChild(tr); return;
+    }
+    const typeLabel = {ma:"MA/EMA", rsi_macd:"RSI/MACD", condition:"조건식", ml:"AI/ML"};
+    list.forEach(s => {
+      const tr = document.createElement("tr");
+      [s.name, s.stock_code + " " + s.stock_name,
+       typeLabel[s.strategy_type] || s.strategy_type,
+       s.mode === "real" ? "실전" : "모의"].forEach(text => {
+        const td = document.createElement("td");
+        td.textContent = text; tr.appendChild(td);
+      });
+      const tdS = document.createElement("td");
+      const badge = document.createElement("span");
+      badge.className = "badge " + (s.is_active ? "bg-success" : "bg-secondary");
+      badge.textContent = s.is_active ? "활성" : "비활성";
+      badge.style.cursor = "pointer";
+      badge.addEventListener("click", () => {
+        fetch("/strategies/api/strategies/" + s.id + "/toggle", {method:"POST"}).then(() => loadStrategies());
+      });
+      tdS.appendChild(badge); tr.appendChild(tdS);
+      const tdB = document.createElement("td");
+      const btn = document.createElement("button");
+      btn.className = "btn btn-sm btn-outline-danger";
+      btn.textContent = "삭제";
+      btn.addEventListener("click", () => {
+        if (!confirm("삭제하시겠습니까?")) return;
+        fetch("/strategies/api/strategies/" + s.id, {method:"DELETE"}).then(() => loadStrategies());
+      });
+      tdB.appendChild(btn); tr.appendChild(tdB);
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function addStrategy() {
+  let params;
+  try { params = JSON.parse(document.getElementById("s-params").value); }
+  catch(e) { alert("파라미터 JSON 형식 오류"); return; }
+  fetch("/strategies/api/strategies", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      name: document.getElementById("s-name").value,
+      stock_code: document.getElementById("s-code").value,
+      stock_name: document.getElementById("s-sname").value,
+      strategy_type: document.getElementById("s-type").value,
+      params, mode: document.getElementById("s-mode").value,
+    }),
+  }).then(r => r.json()).then(() => {
+    bootstrap.Modal.getInstance(document.getElementById("addModal")).hide();
+    loadStrategies();
+  });
+}
+loadStrategies();
+</script>
+{% endblock %}
