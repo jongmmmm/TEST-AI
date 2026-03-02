@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF RAG 시스템</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #f0f2f5; color: #222; }
+    header { background: #1a1a2e; color: #fff; padding: 16px 24px; font-size: 1.2rem; font-weight: bold; }
+    .container { max-width: 960px; margin: 24px auto; padding: 0 16px; display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+
+    .panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .panel h2 { font-size: .95rem; font-weight: 700; margin-bottom: 14px; color: #1a1a2e; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+
+    .drop-zone { border: 2px dashed #c0c0d0; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: background .2s; }
+    .drop-zone:hover, .drop-zone.over { background: #eef2ff; border-color: #6c63ff; }
+    .drop-zone span { display: block; font-size: .85rem; color: #888; margin-top: 6px; }
+    #fileInput { display: none; }
+    .btn { display: inline-block; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600; transition: opacity .2s; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #6c63ff; color: #fff; width: 100%; margin-top: 10px; }
+    .btn-danger { background: #ff5252; color: #fff; padding: 4px 10px; font-size: .78rem; }
+    #uploadStatus { margin-top: 10px; font-size: .82rem; min-height: 18px; }
+    .ok  { color: #2e7d32; }
+    .err { color: #c62828; }
+
+    #docList { margin-top: 6px; }
+    .doc-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 4px; border-bottom: 1px solid #f0f0f0; font-size: .82rem; }
+    .doc-item .doc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+    .doc-item .doc-chunks { color: #888; font-size: .75rem; margin-right: 8px; }
+    .empty { color: #aaa; font-size: .82rem; text-align: center; padding: 12px 0; }
+
+    .chat-panel { display: flex; flex-direction: column; }
+    #chatBox { flex: 1; min-height: 420px; max-height: 520px; overflow-y: auto; padding: 16px; background: #f7f8fc; border-radius: 10px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; line-height: 1.55; font-size: .9rem; word-break: break-word; }
+    .msg.user { background: #6c63ff; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .msg.bot  { background: #fff; color: #222; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .sources { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e8e8e8; font-size: .78rem; color: #555; }
+    .sources-title { font-weight: 700; color: #1a1a2e; display: block; margin-bottom: 4px; }
+    .src-item { margin-top: 4px; }
+    .typing { align-self: flex-start; background: #fff; color: #888; padding: 10px 14px; border-radius: 14px; font-size: .88rem; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    .input-row { display: flex; gap: 8px; }
+    #question { flex: 1; padding: 10px 14px; border: 1.5px solid #d0d0e0; border-radius: 8px; font-size: .9rem; outline: none; transition: border .2s; }
+    #question:focus { border-color: #6c63ff; }
+    #sendBtn { background: #6c63ff; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: .9rem; font-weight: 600; transition: opacity .2s; }
+    #sendBtn:hover { opacity: .85; }
+    #sendBtn:disabled { opacity: .5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+<header>PDF RAG — 문서 기반 질의응답</header>
+<div class="container">
+
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>PDF 업로드</h2>
+      <div class="drop-zone" id="dropZone">
+        <div id="dropLabel">클릭 또는 파일을 여기에 드래그</div>
+        <span>PDF 파일만 지원</span>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf">
+      <button class="btn btn-primary" onclick="uploadFile()">업로드</button>
+      <div id="uploadStatus"></div>
+    </div>
+
+    <div class="panel">
+      <h2>등록된 문서</h2>
+      <div id="docList"><div class="empty">문서 없음</div></div>
+    </div>
+  </div>
+
+  <div class="panel chat-panel">
+    <h2>질문하기</h2>
+    <div id="chatBox">
+      <div class="msg bot">안녕하세요! PDF를 업로드하고 질문해 보세요.</div>
+    </div>
+    <div class="input-row">
+      <input type="text" id="question" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter') sendQuestion()">
+      <button id="sendBtn" onclick="sendQuestion()">전송</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('over');
+    if (e.dataTransfer.files[0]) {
+      fileInput.files = e.dataTransfer.files;
+      document.getElementById('dropLabel').textContent = e.dataTransfer.files[0].name;
+    }
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) document.getElementById('dropLabel').textContent = fileInput.files[0].name;
+  });
+
+  async function uploadFile() {
+    const status = document.getElementById('uploadStatus');
+    if (!fileInput.files[0]) { status.textContent = '파일을 선택하세요.'; status.className = 'err'; return; }
+    status.textContent = '업로드 중...'; status.className = '';
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.error) { status.textContent = d.error; status.className = 'err'; }
+      else { status.textContent = d.message; status.className = 'ok'; loadDocs(); }
+    } catch(e) { status.textContent = '업로드 실패'; status.className = 'err'; }
+  }
+
+  async function loadDocs() {
+    const r = await fetch('/api/docs');
+    const d = await r.json();
+    const el = document.getElementById('docList');
+    el.textContent = '';
+    if (!d.docs || d.docs.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '문서 없음';
+      el.appendChild(empty);
+      return;
+    }
+    d.docs.forEach(doc => {
+      const row = document.createElement('div');
+      row.className = 'doc-item';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'doc-name';
+      nameSpan.title = doc.name;
+      nameSpan.textContent = doc.name;
+
+      const chunkSpan = document.createElement('span');
+      chunkSpan.className = 'doc-chunks';
+      chunkSpan.textContent = doc.chunks + '청크';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', () => deleteDoc(doc.name));
+
+      row.appendChild(nameSpan);
+      row.appendChild(chunkSpan);
+      row.appendChild(delBtn);
+      el.appendChild(row);
+    });
+  }
+
+  async function deleteDoc(name) {
+    if (!confirm('"' + name + '" 을(를) 삭제하시겠습니까?')) return;
+    const r = await fetch('/api/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name}) });
+    const d = await r.json();
+    alert(d.message || d.error);
+    loadDocs();
+  }
+
+  async function sendQuestion() {
+    const q = document.getElementById('question').value.trim();
+    if (!q) return;
+    const btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+    addMsg(q, 'user');
+    document.getElementById('question').value = '';
+
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+    typing.textContent = '답변 생성 중...';
+    document.getElementById('chatBox').appendChild(typing);
+    scrollChat();
+
+    try {
+      const r = await fetch('/api/ask', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({question: q}) });
+      const d = await r.json();
+      typing.remove();
+      if (d.error) { addMsg(d.error, 'bot'); }
+      else { addBotMsg(d.answer, d.sources); }
+    } catch(e) {
+      typing.remove();
+      addMsg('오류가 발생했습니다.', 'bot');
+    }
+    btn.disabled = false;
+  }
+
+  function addMsg(text, role) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + role;
+    el.textContent = text;
+    document.getElementById('chatBox').appendChild(el);
+    scrollChat();
+  }
+
+  function addBotMsg(answer, sources) {
+    const el = document.createElement('div');
+    el.className = 'msg bot';
+
+    const answerEl = document.createElement('div');
+    answerEl.textContent = answer;
+    el.appendChild(answerEl);
+
+    if (sources && sources.length) {
+      const srcDiv = document.createElement('div');
+      srcDiv.className = 'sources';
+
+      const title = document.createElement('span');
+      title.className = 'sources-title';
+      title.textContent = '참고 문서';
+      srcDiv.appendChild(title);
+
+      sources.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'src-item';
+        item.textContent = s.source + ' (유사도 ' + s.similarity + ') — ' + s.text + '…';
+        srcDiv.appendChild(item);
+      });
+      el.appendChild(srcDiv);
+    }
+
+    document.getElementById('chatBox').appendChild(el);
+    scrollChat();
+  }
+
+  function scrollChat() {
+    const cb = document.getElementById('chatBox');
+    cb.scrollTop = cb.scrollHeight;
+  }
+
+  loadDocs();
+</script>
+</body>
+</html>
