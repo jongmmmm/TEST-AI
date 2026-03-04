@@ -1,7 +1,10 @@
 # Secrets
 credentials.json
 token.json
+.env
 
 # Python
 __pycache__/
 *.pyc
+venv/
+*.db

@@ -1,8 +1,8 @@
 """
 한국투자증권 Open API 래퍼
 - 토큰 자동 갱신 (DB 캐시)
-- 모의/실전 URL 자동 전환
-- 현재가, 일봉, 주문(매수/매도), 잔고 조회
+- 모의/실전 URL·키 자동 전환
+- 현재가, 일봉, 주문(매수/매도), 잔고, 지수 조회
 """
 import requests
 from datetime import datetime, timedelta
@@ -16,9 +16,17 @@ def _base_url(mode: str) -> str:
     return cfg["PAPER_BASE_URL"] if mode == "paper" else cfg["REAL_BASE_URL"]
 
 
+def _credentials(mode: str) -> tuple:
+    """모드에 맞는 (app_key, app_secret, account_no) 반환"""
+    cfg = current_app.config
+    if mode == "paper":
+        return cfg["KIS_PAPER_APP_KEY"], cfg["KIS_PAPER_APP_SECRET"], cfg["KIS_PAPER_ACCOUNT_NO"]
+    return cfg["KIS_REAL_APP_KEY"], cfg["KIS_REAL_APP_SECRET"], cfg["KIS_REAL_ACCOUNT_NO"]
+
+
 def get_token(mode: str) -> str:
     """액세스 토큰 반환 (캐시 유효하면 재사용)"""
-    cfg = current_app.config
+    app_key, app_secret, _ = _credentials(mode)
     token_row = KisToken.query.filter_by(mode=mode).first()
     now = datetime.utcnow()
 
@@ -28,8 +36,8 @@ def get_token(mode: str) -> str:
     url = f"{_base_url(mode)}/oauth2/tokenP"
     body = {
         "grant_type": "client_credentials",
-        "appkey": cfg["KIS_APP_KEY"],
-        "appsecret": cfg["KIS_APP_SECRET"],
+        "appkey": app_key,
+        "appsecret": app_secret,
     }
     resp = requests.post(url, json=body, timeout=10)
     resp.raise_for_status()
@@ -48,11 +56,11 @@ def get_token(mode: str) -> str:
 
 
 def _headers(mode: str, tr_id: str) -> dict:
-    cfg = current_app.config
+    app_key, app_secret, _ = _credentials(mode)
     return {
         "authorization": f"Bearer {get_token(mode)}",
-        "appkey": cfg["KIS_APP_KEY"],
-        "appsecret": cfg["KIS_APP_SECRET"],
+        "appkey": app_key,
+        "appsecret": app_secret,
         "tr_id": tr_id,
         "custtype": "P",
         "Content-Type": "application/json; charset=utf-8",
@@ -75,6 +83,7 @@ def get_current_price(stock_code: str, mode: str = "paper") -> dict:
         "volume": int(output.get("acml_vol", 0)),
         "high": int(output.get("stck_hgpr", 0)),
         "low": int(output.get("stck_lwpr", 0)),
+        "open": int(output.get("stck_oprc", 0)),
     }
 
 
@@ -111,6 +120,7 @@ def place_order(stock_code: str, order_type: str, price: int,
                 quantity: int, mode: str = "paper") -> dict:
     """주문 실행 → {"order_no": "...", "success": True}"""
     cfg = current_app.config
+    _, _, account_no = _credentials(mode)
     if order_type == "buy":
         tr_id = "VTTC0802U" if mode == "paper" else "TTTC0802U"
     else:
@@ -118,7 +128,7 @@ def place_order(stock_code: str, order_type: str, price: int,
 
     url = f"{_base_url(mode)}/uapi/domestic-stock/v1/trading/order-cash"
     body = {
-        "CANO": cfg["KIS_ACCOUNT_NO"],
+        "CANO": account_no,
         "ACNT_PRDT_CD": cfg["KIS_ACCOUNT_SUFFIX"],
         "PDNO": stock_code,
         "ORD_DVSN": "00" if price > 0 else "01",
@@ -136,13 +146,37 @@ def place_order(stock_code: str, order_type: str, price: int,
     }
 
 
+def get_index_price(index_code: str, mode: str = "paper") -> dict:
+    """업종 지수 현재가 조회 (0001=코스피, 1001=코스닥)"""
+    url = f"{_base_url(mode)}/uapi/domestic-stock/v1/quotations/inquire-index-price"
+    params = {
+        "FID_COND_MRKT_DIV_CODE": "U",
+        "FID_INPUT_ISCD": index_code,
+    }
+    resp = requests.get(
+        url, headers=_headers(mode, "FHPUP02100000"), params=params, timeout=10
+    )
+    resp.raise_for_status()
+    output = resp.json().get("output", {})
+    return {
+        "index": float(output.get("bstp_nmix_prpr", 0)),
+        "change_val": float(output.get("bstp_nmix_prdy_vrss", 0)),
+        "change_rate": float(output.get("bstp_nmix_prdy_ctrt", 0)),
+        "open": float(output.get("bstp_nmix_oprc", 0)),
+        "high": float(output.get("bstp_nmix_hgpr", 0)),
+        "low": float(output.get("bstp_nmix_lwpr", 0)),
+        "volume": int(output.get("acml_vol", 0)),
+    }
+
+
 def get_balance(mode: str = "paper") -> list:
     """잔고 조회"""
     cfg = current_app.config
+    _, _, account_no = _credentials(mode)
     tr_id = "VTTC8434R" if mode == "paper" else "TTTC8434R"
     url = f"{_base_url(mode)}/uapi/domestic-stock/v1/trading/inquire-balance"
     params = {
-        "CANO": cfg["KIS_ACCOUNT_NO"],
+        "CANO": account_no,
         "ACNT_PRDT_CD": cfg["KIS_ACCOUNT_SUFFIX"],
         "AFHR_FLPR_YN": "N",
         "OFL_YN": "N",

@@ -1,98 +1,315 @@
 {% extends "base.html" %}
 {% block title %}대시보드 — KIS 자동매매{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">대시보드</h4>
-  <button class="btn btn-sm btn-outline-secondary" onclick="loadBalance()">
-    <i class="fa-solid fa-rotate-right"></i> 새로고침
-  </button>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0">실시간 시세</h4>
+  <div>
+    <span id="last-update" class="text-muted small me-2"></span>
+    <span id="refresh-indicator" class="badge bg-success" style="font-size:.65rem">LIVE 3s</span>
+  </div>
 </div>
+
+<!-- 코스피 / 코스닥 지수 -->
 <div class="row g-3 mb-4">
-  <div class="col-md-4">
-    <div class="card shadow-sm">
+  <div class="col-md-6">
+    <div class="card shadow-sm border-0" id="card-kospi">
       <div class="card-body">
-        <div class="text-muted small">보유 종목 수</div>
-        <div id="stat-count" class="fs-3 fw-bold">-</div>
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted small fw-bold">KOSPI 코스피</div>
+            <div id="kospi-index" class="fs-2 fw-bold mt-1">-</div>
+          </div>
+          <div class="text-end">
+            <div id="kospi-change" class="fs-5 fw-bold">-</div>
+            <div id="kospi-rate" class="small">-</div>
+          </div>
+        </div>
+        <div class="d-flex gap-3 mt-2 small text-muted">
+          <span>시가 <strong id="kospi-open">-</strong></span>
+          <span>고가 <strong id="kospi-high">-</strong></span>
+          <span>저가 <strong id="kospi-low">-</strong></span>
+          <span>거래량 <strong id="kospi-vol">-</strong></span>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card shadow-sm">
+  <div class="col-md-6">
+    <div class="card shadow-sm border-0" id="card-kosdaq">
       <div class="card-body">
-        <div class="text-muted small">총 평가손익</div>
-        <div id="stat-pnl" class="fs-3 fw-bold">-</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div class="text-muted small">투자 모드</div>
-        <div id="stat-mode" class="fs-3 fw-bold">-</div>
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted small fw-bold">KOSDAQ 코스닥</div>
+            <div id="kosdaq-index" class="fs-2 fw-bold mt-1">-</div>
+          </div>
+          <div class="text-end">
+            <div id="kosdaq-change" class="fs-5 fw-bold">-</div>
+            <div id="kosdaq-rate" class="small">-</div>
+          </div>
+        </div>
+        <div class="d-flex gap-3 mt-2 small text-muted">
+          <span>시가 <strong id="kosdaq-open">-</strong></span>
+          <span>고가 <strong id="kosdaq-high">-</strong></span>
+          <span>저가 <strong id="kosdaq-low">-</strong></span>
+          <span>거래량 <strong id="kosdaq-vol">-</strong></span>
+        </div>
       </div>
     </div>
   </div>
 </div>
-<div class="card shadow-sm">
-  <div class="card-header fw-bold">보유 종목</div>
+
+<!-- 종목 추가 -->
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body py-2">
+    <form id="add-stock-form" class="d-flex align-items-center gap-2" onsubmit="return addStock(event)">
+      <i class="fa-solid fa-magnifying-glass text-muted"></i>
+      <input type="text" id="add-code" class="form-control form-control-sm border-0"
+             placeholder="종목코드 입력 (예: 005930)" maxlength="6" style="max-width:200px">
+      <button class="btn btn-sm btn-outline-primary" type="submit">추가</button>
+    </form>
+  </div>
+</div>
+
+<!-- 전체 종목 시가 테이블 -->
+<div class="card shadow-sm border-0">
+  <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+    <span><i class="fa-solid fa-table-list me-2"></i>전체 종목 시세</span>
+    <span id="stock-count" class="badge bg-secondary">0종목</span>
+  </div>
   <div class="card-body p-0">
-    <table class="table table-hover mb-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size:.88rem">
+        <thead class="table-light">
+          <tr>
+            <th style="width:90px">종목코드</th>
+            <th>종목명</th>
+            <th class="text-end">시가</th>
+            <th class="text-end">현재가</th>
+            <th class="text-end">전일대비(%)</th>
+            <th class="text-end">고가</th>
+            <th class="text-end">저가</th>
+            <th class="text-end">거래량</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="stock-body">
+          <tr><td colspan="9" class="text-center text-muted py-4">로딩 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 보유 종목 -->
+<div class="card shadow-sm border-0 mt-4">
+  <div class="card-header fw-bold">
+    <i class="fa-solid fa-wallet me-2"></i>보유 종목
+    <button class="btn btn-sm btn-outline-secondary float-end" onclick="loadBalance()">
+      <i class="fa-solid fa-rotate-right"></i>
+    </button>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0" style="font-size:.88rem">
       <thead class="table-light">
-        <tr><th>종목코드</th><th>종목명</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가손익</th><th>수익률</th></tr>
+        <tr><th>종목코드</th><th>종목명</th><th class="text-end">수량</th><th class="text-end">평균단가</th><th class="text-end">현재가</th><th class="text-end">평가금액</th><th class="text-end">평가손익</th><th class="text-end">수익률</th></tr>
       </thead>
       <tbody id="balance-body">
-        <tr><td colspan="7" class="text-center text-muted py-4">로딩 중...</td></tr>
+        <tr><td colspan="8" class="text-center text-muted py-4">로딩 중...</td></tr>
       </tbody>
     </table>
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
+<style>
+  .up { color: #e74c3c; }
+  .down { color: #3498db; }
+  .flat { color: #888; }
+  .bg-up { background: linear-gradient(135deg, #fff5f5, #ffe0e0) !important; }
+  .bg-down { background: linear-gradient(135deg, #f0f5ff, #dce6ff) !important; }
+  .bg-flat { background: #f8f9fa !important; }
+  .idx-card-up { border-left: 4px solid #e74c3c !important; }
+  .idx-card-down { border-left: 4px solid #3498db !important; }
+  .idx-card-flat { border-left: 4px solid #adb5bd !important; }
+  .row-up { background: rgba(231,76,60,.04); }
+  .row-down { background: rgba(52,152,219,.04); }
+  .flash { animation: flashBg .5s ease; }
+  @keyframes flashBg {
+    0% { background-color: rgba(255,235,59,.25); }
+    100% { background-color: transparent; }
+  }
+  #stock-body tr:hover { background: #f8f9fa; }
+  .remove-btn { cursor:pointer; color:#ccc; }
+  .remove-btn:hover { color:#e74c3c; }
+  .arrow-up::before { content: "\25B2 "; font-size:.7em; }
+  .arrow-down::before { content: "\25BC "; font-size:.7em; }
+</style>
 <script>
+// 추가 종목 관리 (localStorage)
+function getExtraCodes() {
+  try { return JSON.parse(localStorage.getItem("kis_extra_codes") || "[]"); }
+  catch { return []; }
+}
+function saveExtraCodes(arr) {
+  localStorage.setItem("kis_extra_codes", JSON.stringify(arr));
+}
+function addStock(e) {
+  e.preventDefault();
+  const input = document.getElementById("add-code");
+  const code = input.value.trim();
+  if (!code || code.length < 4) return false;
+  const arr = getExtraCodes();
+  if (!arr.includes(code)) {
+    arr.push(code);
+    saveExtraCodes(arr);
+    loadMarketPrices();
+  }
+  input.value = "";
+  return false;
+}
+function removeExtra(code) {
+  const arr = getExtraCodes().filter(c => c !== code);
+  saveExtraCodes(arr);
+  loadMarketPrices();
+}
+
+// 숫자 포맷
+function fmt(n) { return n != null ? Number(n).toLocaleString("ko-KR") : "-"; }
+function fmtF(n, d) { return n != null ? Number(n).toFixed(d || 2) : "-"; }
+
+// 변동 CSS 클래스
+function chgClass(val) {
+  if (val > 0) return "up";
+  if (val < 0) return "down";
+  return "flat";
+}
+
+// 이전 가격 저장 (깜빡임 효과용)
+let prevPrices = {};
+
+// 지수 업데이트
+function updateIndex(prefix, data) {
+  if (!data) {
+    document.getElementById(prefix + "-index").textContent = "연결 실패";
+    return;
+  }
+  const cls = chgClass(data.change_val);
+  const arrow = data.change_val > 0 ? "arrow-up" : data.change_val < 0 ? "arrow-down" : "";
+  const sign = data.change_val > 0 ? "+" : "";
+  document.getElementById(prefix + "-index").textContent = fmtF(data.index);
+  document.getElementById(prefix + "-index").className = "fs-2 fw-bold mt-1 " + cls;
+
+  const changeEl = document.getElementById(prefix + "-change");
+  changeEl.textContent = sign + fmtF(data.change_val);
+  changeEl.className = "fs-5 fw-bold " + cls + " " + arrow;
+
+  const rateEl = document.getElementById(prefix + "-rate");
+  rateEl.textContent = sign + fmtF(data.change_rate) + "%";
+  rateEl.className = "small " + cls;
+
+  document.getElementById(prefix + "-open").textContent = fmtF(data.open);
+  document.getElementById(prefix + "-high").textContent = fmtF(data.high);
+  document.getElementById(prefix + "-low").textContent = fmtF(data.low);
+  document.getElementById(prefix + "-vol").textContent = fmt(data.volume);
+
+  const card = document.getElementById("card-" + prefix);
+  card.className = "card shadow-sm border-0 idx-card-" + cls + " bg-" + cls;
+}
+
+// 종목 테이블 업데이트
+function updateStocks(stocks) {
+  const tbody = document.getElementById("stock-body");
+  const extraCodes = getExtraCodes();
+  if (!stocks || !stocks.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">등록된 종목이 없습니다. 종목코드를 추가하세요.</td></tr>';
+    document.getElementById("stock-count").textContent = "0종목";
+    return;
+  }
+  document.getElementById("stock-count").textContent = stocks.length + "종목";
+
+  // 기존 행 업데이트 또는 새로 생성
+  const fragment = document.createDocumentFragment();
+  stocks.forEach(s => {
+    const cls = chgClass(s.change_rate);
+    const sign = s.change_rate > 0 ? "+" : "";
+    const isExtra = extraCodes.includes(s.stock_code);
+    const priceKey = s.stock_code;
+    const flashed = prevPrices[priceKey] !== undefined && prevPrices[priceKey] !== s.price;
+    prevPrices[priceKey] = s.price;
+
+    const arrow = s.change_rate > 0 ? "arrow-up" : s.change_rate < 0 ? "arrow-down" : "";
+    const rowBg = s.change_rate > 0 ? "row-up" : s.change_rate < 0 ? "row-down" : "";
+    const tr = document.createElement("tr");
+    tr.className = (flashed ? "flash " : "") + rowBg;
+    tr.innerHTML =
+      '<td><code>' + s.stock_code + '</code></td>' +
+      '<td>' + (s.stock_name || "-") + '</td>' +
+      '<td class="text-end fw-bold">' + fmt(s.open) + '</td>' +
+      '<td class="text-end fw-bold ' + cls + ' ' + arrow + '">' + fmt(s.price) + '</td>' +
+      '<td class="text-end ' + cls + '">' + sign + fmtF(s.change_rate) + '%</td>' +
+      '<td class="text-end">' + fmt(s.high) + '</td>' +
+      '<td class="text-end">' + fmt(s.low) + '</td>' +
+      '<td class="text-end">' + fmt(s.volume) + '</td>' +
+      '<td>' + (isExtra ? '<i class="fa-solid fa-xmark remove-btn" onclick="removeExtra(\'' + s.stock_code + '\')"></i>' : '') + '</td>';
+    fragment.appendChild(tr);
+  });
+  tbody.textContent = "";
+  tbody.appendChild(fragment);
+}
+
+// 시세 로드
+function loadMarketPrices() {
+  const extra = getExtraCodes().join(",");
+  const url = "/api/market-prices" + (extra ? "?extra=" + extra : "");
+  fetch(url).then(r => r.json()).then(d => {
+    updateIndex("kospi", d.indices.kospi);
+    updateIndex("kosdaq", d.indices.kosdaq);
+    updateStocks(d.stocks);
+    document.getElementById("last-update").textContent =
+      "업데이트: " + new Date().toLocaleTimeString("ko-KR");
+  }).catch(() => {
+    document.getElementById("last-update").textContent = "연결 실패";
+  });
+}
+
+// 보유 종목
 function loadBalance() {
   fetch("/api/balance").then(r => r.json()).then(d => {
-    document.getElementById("stat-mode").textContent = d.mode === "real" ? "실전" : "모의";
     const tbody = document.getElementById("balance-body");
     tbody.textContent = "";
     if (!d.balance || !d.balance.length) {
       const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 7; td.className = "text-center text-muted py-4";
-      td.textContent = "보유 종목 없음";
-      tr.appendChild(td); tbody.appendChild(tr);
-      document.getElementById("stat-count").textContent = "0종목";
-      document.getElementById("stat-pnl").textContent = "0원";
+      tr.innerHTML = '<td colspan="8" class="text-center text-muted py-4">보유 종목 없음</td>';
+      tbody.appendChild(tr);
       return;
     }
-    let totalPnl = 0;
     d.balance.forEach(row => {
       const pnl = row.eval_profit_loss || 0;
-      totalPnl += pnl;
-      const pnlClass = pnl >= 0 ? "text-danger" : "text-primary";
+      const cls = pnl > 0 ? "up" : pnl < 0 ? "down" : "flat";
+      const arrow = pnl > 0 ? "arrow-up" : pnl < 0 ? "arrow-down" : "";
+      const rowBg = pnl > 0 ? "row-up" : pnl < 0 ? "row-down" : "";
+      const sign = pnl > 0 ? "+" : "";
       const tr = document.createElement("tr");
-      [
-        [row.stock_code, ""],
-        [row.stock_name, ""],
-        [row.quantity + "주", ""],
-        [row.avg_price.toLocaleString() + "원", ""],
-        [row.current_price.toLocaleString() + "원", ""],
-        [pnl.toLocaleString() + "원", pnlClass],
-        [(row.profit_loss_rate || 0).toFixed(2) + "%", pnlClass],
-      ].forEach(([text, cls]) => {
-        const td = document.createElement("td");
-        td.textContent = text;
-        if (cls) td.className = cls;
-        tr.appendChild(td);
-      });
+      tr.className = rowBg;
+      const evalAmt = row.current_price * row.quantity;
+      tr.innerHTML =
+        '<td><code>' + row.stock_code + '</code></td>' +
+        '<td>' + row.stock_name + '</td>' +
+        '<td class="text-end">' + row.quantity + '주</td>' +
+        '<td class="text-end">' + fmt(row.avg_price) + '</td>' +
+        '<td class="text-end">' + fmt(row.current_price) + '</td>' +
+        '<td class="text-end fw-bold ' + cls + '">' + fmt(evalAmt) + '원</td>' +
+        '<td class="text-end ' + cls + ' ' + arrow + '">' + sign + fmt(pnl) + '원</td>' +
+        '<td class="text-end ' + cls + '">' + sign + fmtF(row.profit_loss_rate) + '%</td>';
       tbody.appendChild(tr);
     });
-    document.getElementById("stat-count").textContent = d.balance.length + "종목";
-    const pnlEl = document.getElementById("stat-pnl");
-    pnlEl.textContent = totalPnl.toLocaleString() + "원";
-    pnlEl.className = "fs-3 fw-bold " + (totalPnl >= 0 ? "text-danger" : "text-primary");
   });
 }
+
+// 초기 로드 + 3초 갱신
+loadMarketPrices();
 loadBalance();
+setInterval(loadMarketPrices, 3000);
 setInterval(loadBalance, 30000);
 </script>
 {% endblock %}
